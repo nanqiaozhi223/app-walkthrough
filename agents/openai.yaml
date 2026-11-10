@@ -1,0 +1,7 @@
+interface:
+  display_name: "App Walkthrough"
+  short_description: "Review iPhone apps and collect feed posts over USB, then write a report"
+  default_prompt: "Use $app-walkthrough to walk through an app on my connected iPhone step by step, without risky actions, and write a report from the screenshots."
+
+policy:
+  allow_implicit_invocation: true
