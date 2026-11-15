@@ -1,13 +1,13 @@
 ---
 name: app-walkthrough
-description: Walk through an iPhone app on a USB-connected phone with Appium + XCUITest, one checked step at a time, and turn the run into a report. Use when the user wants an app's screens reviewed, a flow tried out, posts or comments gathered from a feed, or an experience/content report written from real screenshots, with no external AI API.
+description: Walk through an iPhone app, a web product in Chrome/Safari, or a macOS desktop app one checked step at a time, and turn the run into a product experience report. Use when the user wants screens reviewed, a flow tried out, posts or comments gathered, or evidence-backed UX findings written without an external AI API.
 ---
 
-# App Walkthrough (iPhone)
+# App Walkthrough (iPhone, Web, and macOS)
 
-You are the operator; the scripts are your hands. Each turn of the loop is the same: look at a fresh screenshot or text snapshot, decide one small action, run it with `scripts/device.py`, then look again. Everything you do is written to a run directory, and `scripts/report.py` builds the report from it.
+You are the operator; the scripts are your hands. Each turn of the loop is the same: look at a fresh screenshot or text snapshot, decide one small action, run it with the driver for that platform, then look again. Everything you do is written to a run directory, and `scripts/report.py` builds the report from it.
 
-Under the hood this is Appium 3 with the XCUITest driver, which installs WebDriverAgent (WDA) on the phone. That needs a Mac with full Xcode. Linux and Windows are not supported.
+The skill supports a USB iPhone through Appium/XCUITest, a web product in the current Chrome or Safari tab, and a macOS desktop app through Accessibility. Phone and desktop paths need macOS; web runs preserve the browser's existing login state.
 
 ## Ground rules
 
@@ -44,6 +44,44 @@ The rest is one-time manual work the user does, per Mac and Apple account. Guide
 You do not need to look up the Team ID or the WDA bundle ID. `start-run` takes the Team from the one `Apple Development` certificate in the login keychain and the bundle ID from the `*.WebDriverAgentRunner.xctrunner` app on the phone, and prints both. Pass `--team-id` / `--wda-bundle-id` (or set `IOS_TEAM_ID` / `IOS_WDA_BUNDLE_ID`) only if it finds several or none.
 
 Signing is personal. Anyone you share this skill with does steps 1–5 with their own account.
+
+## Web products
+
+Use `scripts/web.py` for a website or browser product. It uses the current Chrome/Safari window and does not create a new profile, so ask before opening a page that may expose account data.
+
+One-time setup:
+
+- Chrome: View → Developer → **Allow JavaScript from Apple Events**.
+- Safari: Safari → Settings → Advanced → **Show features for web developers**, then Develop → **Allow JavaScript from Apple Events**.
+- Give the host running this skill Automation/Accessibility permission; grant Screen Recording if window screenshots fall back to the whole screen.
+
+```sh
+python3 scripts/web.py status
+python3 scripts/web.py start-run --browser chrome --url https://example.com --title "商品页走查" --task "检查商品信息和入口"
+python3 scripts/web.py screenshot --run RUN_DIR --browser chrome --title "首屏" --reason "任务开始"
+python3 scripts/web.py texts --run RUN_DIR --browser chrome
+python3 scripts/web.py tap-text --run RUN_DIR --browser chrome "帮助中心" --exact --reason "打开帮助"
+python3 scripts/web.py scroll --run RUN_DIR --browser chrome down --check --reason "查看下方"
+python3 scripts/web.py close --run RUN_DIR
+```
+
+`texts` 保存可见 DOM 文字、角色、交互性和 CSS 像素坐标到 `ui-latest.json`。截图优先截浏览器窗口；如果 macOS 不允许读取窗口 ID，会退回全屏并把 `scope: screen` 写入证据。canvas 或没有 DOM 文字的网页退回截图 + `ocr.py`，并在报告里标记结构未验证。网页点击和输入同样拒绝密码、验证码、支付和其他敏感内容。
+
+## macOS desktop products
+
+Use `scripts/desktop.py` for a native macOS or Electron app. It reads the Accessibility tree, captures the app window, and只提供语义点击与 Page Down 滚动；不会输入文本，也不会退出目标 App。用户需要在系统设置 → 隐私与安全性 → 辅助功能中授权当前 Terminal/iSelf/opencode；没有授权就停止并提示，不用坐标猜测绕过。
+
+```sh
+python3 scripts/desktop.py status
+python3 scripts/desktop.py start-run --app-name "Calculator" --title "计算器走查" --task "检查基本入口"
+python3 scripts/desktop.py screenshot --run RUN_DIR --title "初始窗口" --reason "任务开始"
+python3 scripts/desktop.py texts --run RUN_DIR
+python3 scripts/desktop.py tap-text --run RUN_DIR "清除" --exact --reason "观察清除入口"
+python3 scripts/desktop.py scroll --run RUN_DIR down --check --reason "查看下方"
+python3 scripts/desktop.py close --run RUN_DIR
+```
+
+桌面走查会占用当前窗口和键盘焦点，开始前提醒用户不要同时操作电脑。控件树为空时使用截图 + OCR，并把置信度降低写入报告。
 
 ## A run, step by step
 
@@ -230,6 +268,8 @@ Before you reply, look through the rendered report: every issue points at a scre
 ## Files
 
 - `scripts/device.py`: phone control and run logging (start/close, screenshots, texts, taps, scrolling with change checks, feed and comment collection, input).
+- `scripts/web.py`: Chrome/Safari web walkthrough with DOM snapshots, semantic text clicks, scrolling, screenshots, and the same run/evidence format.
+- `scripts/desktop.py` + `scripts/ax_helper.swift`: macOS Accessibility-tree walkthrough with window screenshots and safe semantic presses.
 - `scripts/bootstrap.py`: environment check; `--install` adds the pinned Appium and driver once the user agrees.
 - `scripts/report.py`: `--init` writes the `analysis.json` skeleton; without flags it validates and writes `report.md` and `report.html`.
 - `scripts/ocr.py` + `scripts/vision_ocr.swift`: offline Apple Vision OCR, pixel boxes.

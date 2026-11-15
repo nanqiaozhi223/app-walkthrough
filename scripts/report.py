@@ -53,7 +53,11 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     # JSONL rows end at \n only; splitlines() would also break on U+2028 inside a post.
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").split("\n")
+        if line.strip()
+    ]
 
 
 def figures(run: Path) -> list[dict[str, Any]]:
@@ -94,14 +98,24 @@ def describe(event: dict[str, Any]) -> str:
         # iOS labels can carry a second line such as "Tab 2 of 4"; show only the visible label.
         target = str(event.get("target_text") or "").split("\n")[0].strip()
         return f"点击「{target}」" if target else "点击截图中确认的位置"
+    if kind == "navigate":
+        target = str(event.get("target_text") or "").strip()
+        return f"打开「{target}」页面" if target else "打开页面"
     if kind == "scroll":
-        return {"down": "向下滚动", "up": "向上滚动", "left": "向左滑动", "right": "向右滑动"}.get(event.get("direction"), "滚动")
+        return {
+            "down": "向下滚动",
+            "up": "向上滚动",
+            "left": "向左滑动",
+            "right": "向右滑动",
+        }.get(event.get("direction"), "滚动")
     if kind == "swipe":
         return "滑动"
     if kind == "input_text":
         return f"输入 {event.get('text_length', 0)} 个字（内容不记录）"
     if kind == "key":
-        return {"ENTER": "确认 / 提交", "HOME": "回到主屏幕"}.get(event.get("key"), str(event.get("key")))
+        return {"ENTER": "确认 / 提交", "HOME": "回到主屏幕"}.get(
+            event.get("key"), str(event.get("key"))
+        )
     if kind == "launch":
         return "切回目标 App"
     if kind == "wait":
@@ -111,34 +125,56 @@ def describe(event: dict[str, Any]) -> str:
     return str(kind or "操作")
 
 
-def timeline(events: list[dict[str, Any]], shots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def timeline(
+    events: list[dict[str, Any]], shots: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """One row per user-visible step, with the screenshots captured right after it."""
     by_image = {shot["image"]: shot["figure"] for shot in shots}
-    steps: list[dict[str, Any]] = [{"action": "开始", "reason": "进入目标 App", "figures": []}]
+    steps: list[dict[str, Any]] = [
+        {"action": "开始", "reason": "进入目标 App", "figures": []}
+    ]
     for event in events:
         kind = event.get("kind")
         if kind == "action":
-            step = {"action": describe(event), "reason": event.get("reason", ""), "figures": []}
-            if event.get("type") == "collect" and "total" in event:  # runs recorded before collect_done existed
-                step["action"] += f"：滚动 {event.get('screens')} 屏，累计 {event.get('total')} 条"
+            step = {
+                "action": describe(event),
+                "reason": event.get("reason", ""),
+                "figures": [],
+            }
+            if (
+                event.get("type") == "collect" and "total" in event
+            ):  # runs recorded before collect_done existed
+                step["action"] += (
+                    f"：滚动 {event.get('screens')} 屏，累计 {event.get('total')} 条"
+                )
             steps.append(step)
         elif kind == "evidence" and event.get("image") in by_image:
             steps[-1]["figures"].append(by_image[event["image"]])
         elif kind == "scroll_check" and event.get("changed") is False:
             steps[-1]["action"] += "（页面无变化，已到底部或未滚动）"
         elif kind == "left_app":
-            steps[-1]["action"] += f"（中途跳到了 {event.get('foreground')}，已切回并停止）"
+            steps[-1]["action"] += (
+                f"（中途跳到了 {event.get('foreground')}，已切回并停止）"
+            )
         elif kind == "collect_done":
             ending = "已到列表底部" if event.get("reached_end") else "达到屏数上限"
-            steps[-1]["action"] += f"：滚动 {event.get('screens')} 屏，共 {event.get('total')} 条，{ending}"
+            steps[-1]["action"] += (
+                f"：滚动 {event.get('screens')} 屏，共 {event.get('total')} 条，{ending}"
+            )
     return [step for step in steps if step["action"] != "开始" or step["figures"]]
 
 
 def collect_scope(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One entry per collect pass, including passes recorded before collect_done existed."""
     return [
-        event for event in events
-        if event.get("kind") == "collect_done" or (event.get("kind") == "action" and event.get("type") == "collect" and "total" in event)
+        event
+        for event in events
+        if event.get("kind") == "collect_done"
+        or (
+            event.get("kind") == "action"
+            and event.get("type") == "collect"
+            and "total" in event
+        )
     ]
 
 
@@ -150,24 +186,59 @@ def skeleton(mode: str, manifest: dict[str, Any]) -> dict[str, Any]:
         "mode": mode,
         "status": "TODO: completed / partial / blocked",
         "summary": "TODO: 一两句话直接回答用户的问题",
-        "takeaways": ["TODO: 要点 1（写具体对象和数量，不写空话）", "TODO: 要点 2", "TODO: 要点 3"],
+        "takeaways": [
+            "TODO: 要点 1（写具体对象和数量，不写空话）",
+            "TODO: 要点 2",
+            "TODO: 要点 3",
+        ],
         "limitations": ["TODO: 本次没看到或无法确认的内容"],
         "next_steps": ["TODO: 能安全扩大覆盖范围的最小下一步"],
     }
     if mode == "ux":
         return {
             **common,
-            "modules": [{"name": "TODO", "purpose": "TODO", "seen": "TODO: 实际看到了什么", "rating": "TODO: 清晰 / 一般 / 有问题", "figures": [1]}],
+            "modules": [
+                {
+                    "name": "TODO",
+                    "purpose": "TODO",
+                    "seen": "TODO: 实际看到了什么",
+                    "rating": "TODO: 清晰 / 一般 / 有问题",
+                    "figures": [1],
+                }
+            ],
             "strengths": [{"title": "TODO", "detail": "TODO", "figures": [1]}],
-            "issues": [{"severity": "TODO: High / Medium / Low", "title": "TODO", "evidence": "TODO: 截图里能看到什么", "impact": "TODO", "suggestion": "TODO", "figures": [1]}],
+            "issues": [
+                {
+                    "severity": "TODO: High / Medium / Low",
+                    "title": "TODO",
+                    "evidence": "TODO: 截图里能看到什么",
+                    "impact": "TODO",
+                    "suggestion": "TODO",
+                    "figures": [1],
+                }
+            ],
             "not_tested": ["TODO: 未访问的模块、刻意没点的购买/领取/发布等操作"],
         }
     return {
         **common,
         "question": f"TODO: 用户关心的问题，例如“{manifest.get('task', '')}”",
         "keywords": ["TODO: 采集关键词，用于摘要定位，例如 PCDN"],
-        "themes": [{"name": "TODO", "description": "TODO: 这一类帖子在说什么", "items": ["p001"], "notes": {"p001": "TODO: 可选，一句话说清这条帖子的要点；不需要就删掉 notes"}, "comments": ["TODO: 可选，引用最能说明问题的评论编号，如 p001-c02；没有采集评论就删掉"]}],
-        "excluded": [{"reason": "TODO: 例如“只是二手交易广告，与体验无关”", "items": []}],
+        "themes": [
+            {
+                "name": "TODO",
+                "description": "TODO: 这一类帖子在说什么",
+                "items": ["p001"],
+                "notes": {
+                    "p001": "TODO: 可选，一句话说清这条帖子的要点；不需要就删掉 notes"
+                },
+                "comments": [
+                    "TODO: 可选，引用最能说明问题的评论编号，如 p001-c02；没有采集评论就删掉"
+                ],
+            }
+        ],
+        "excluded": [
+            {"reason": "TODO: 例如“只是二手交易广告，与体验无关”", "items": []}
+        ],
     }
 
 
@@ -175,13 +246,25 @@ def find_todo(value: Any, path: str = "") -> list[str]:
     if isinstance(value, str):
         return [path or "(root)"] if TODO in value else []
     if isinstance(value, list):
-        return [hit for index, item in enumerate(value) for hit in find_todo(item, f"{path}[{index}]")]
+        return [
+            hit
+            for index, item in enumerate(value)
+            for hit in find_todo(item, f"{path}[{index}]")
+        ]
     if isinstance(value, dict):
-        return [hit for key, item in value.items() for hit in find_todo(item, f"{path}.{key}" if path else key)]
+        return [
+            hit
+            for key, item in value.items()
+            for hit in find_todo(item, f"{path}.{key}" if path else key)
+        ]
     return []
 
 
-def validate(analysis: dict[str, Any], shots: list[dict[str, Any]], items: dict[str, dict[str, Any]]) -> list[str]:
+def validate(
+    analysis: dict[str, Any],
+    shots: list[dict[str, Any]],
+    items: dict[str, dict[str, Any]],
+) -> list[str]:
     errors = [f"{where} 还是 TODO" for where in find_todo(analysis)]
     mode = analysis.get("mode")
     if mode not in ("ux", "collect"):
@@ -202,7 +285,9 @@ def validate(analysis: dict[str, Any], shots: list[dict[str, Any]], items: dict[
             errors.append(f"{where}.figures 至少引用一张截图")
         for ref in refs:
             if not isinstance(ref, int) or not 1 <= ref <= figure_count:
-                errors.append(f"{where}.figures 引用了不存在的图{ref}（共 {figure_count} 张）")
+                errors.append(
+                    f"{where}.figures 引用了不存在的图{ref}（共 {figure_count} 张）"
+                )
 
     if mode == "ux":
         modules = analysis.get("modules") or []
@@ -230,7 +315,9 @@ def validate(analysis: dict[str, Any], shots: list[dict[str, Any]], items: dict[
             check_figures(where, item.get("figures"), required=True)
     else:
         if not items:
-            errors.append("collect 模式需要 collected.jsonl，请先运行 device.py collect")
+            errors.append(
+                "collect 模式需要 collected.jsonl，请先运行 device.py collect"
+            )
         if not str(analysis.get("question", "")).strip():
             errors.append("question 不能为空")
         themes = analysis.get("themes") or []
@@ -250,11 +337,15 @@ def validate(analysis: dict[str, Any], shots: list[dict[str, Any]], items: dict[
                     errors.append(f"{where}.notes 里的 {ref} 不在这个主题的 items 中")
             for ref in theme.get("comments") or []:
                 if ref not in comment_index(items):
-                    errors.append(f"{where}.comments 里的 {ref} 不在 collected.jsonl 的评论中")
+                    errors.append(
+                        f"{where}.comments 里的 {ref} 不在 collected.jsonl 的评论中"
+                    )
         for index, group in enumerate(analysis.get("excluded") or []):
             for ref in group.get("items") or []:
                 if ref not in items:
-                    errors.append(f"excluded[{index}].items 里的 {ref} 不在 collected.jsonl 中")
+                    errors.append(
+                        f"excluded[{index}].items 里的 {ref} 不在 collected.jsonl 中"
+                    )
     return errors
 
 
@@ -267,7 +358,12 @@ def refs(numbers: list[int] | None) -> str:
 
 
 def comment_index(items: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {comment["id"]: comment for item in items.values() for comment in item.get("comments") or [] if comment.get("id")}
+    return {
+        comment["id"]: comment
+        for item in items.values()
+        for comment in item.get("comments") or []
+        if comment.get("id")
+    }
 
 
 def comment_cell(item: dict[str, Any]) -> str:
@@ -275,7 +371,12 @@ def comment_cell(item: dict[str, Any]) -> str:
     if status is None:
         return "—"
     if status != "ok":
-        return {"not_opened": "未打开", "wrong_page": "打开失败", "no_detail": "打开失败", "left_app": "跳到其他 App"}.get(status, status)
+        return {
+            "not_opened": "未打开",
+            "wrong_page": "打开失败",
+            "no_detail": "打开失败",
+            "left_app": "跳到其他 App",
+        }.get(status, status)
     got = len(item.get("comments") or [])
     total = item.get("comment_total")
     return f"{got} / {total}" if total is not None else str(got)
@@ -287,38 +388,81 @@ def excerpt(text: str, keywords: list[str] | None = None, limit: int = 70) -> st
     if len(flat) <= limit:
         return flat
     lowered = flat.lower()
-    hits = [lowered.find(word.lower()) for word in keywords or [] if word and word.lower() in lowered]
+    hits = [
+        lowered.find(word.lower())
+        for word in keywords or []
+        if word and word.lower() in lowered
+    ]
     start = 0
     if hits and min(hits) > limit - 20:
         start = max(0, min(hits) - limit // 3)
-    piece = flat[start:start + limit]
+    piece = flat[start : start + limit]
     return ("…" if start else "") + piece + ("…" if start + limit < len(flat) else "")
 
 
-def header_blocks(manifest: dict[str, Any], kind: str, status: str | None, events: list[dict[str, Any]]) -> list[tuple]:
+def header_blocks(
+    manifest: dict[str, Any],
+    kind: str,
+    status: str | None,
+    events: list[dict[str, Any]],
+) -> list[tuple]:
+    platform = manifest.get("platform") or "ios"
     app = manifest.get("app") or {}
     device = manifest.get("device") or {}
     app_text = " ".join(part for part in (app.get("name"), app.get("version")) if part)
     if manifest.get("bundle_id"):
-        app_text = f"{app_text}（{manifest['bundle_id']}）" if app_text else manifest["bundle_id"]
-    app_text = app_text or "未知"
-    device_text = " / ".join(part for part in (device.get("model"), device.get("os_version") and f"iOS {device['os_version']}") if part) or "未知"
+        app_text = (
+            f"{app_text}（{manifest['bundle_id']}）"
+            if app_text
+            else manifest["bundle_id"]
+        )
+    app_text = app_text or manifest.get("app_name") or "未知"
+    if platform == "web":
+        app_text = manifest.get("browser", "浏览器")
+        device_text = manifest.get("url") or "当前网页"
+    elif platform == "macos":
+        device_text = "macOS"
+    else:
+        device_text = (
+            " / ".join(
+                part
+                for part in (
+                    device.get("model"),
+                    device.get("os_version") and f"iOS {device['os_version']}",
+                )
+                if part
+            )
+            or "未知"
+        )
     end = manifest.get("closed_at") or (events[-1]["timestamp"] if events else None)
     meta = [
         ("任务", manifest.get("task") or "（未填写）"),
         ("App", app_text),
-        ("设备", device_text),
-        ("时间", f"{local_time(manifest.get('started_at'))}，{duration(manifest.get('started_at'), end)}"),
+        ("平台", platform),
+        ("环境", device_text),
+        (
+            "时间",
+            f"{local_time(manifest.get('started_at'))}，{duration(manifest.get('started_at'), end)}",
+        ),
     ]
     if status:
         meta.insert(0, ("结果", STATUS[status]))
     return [("h1", f"{kind}：{manifest.get('title', '未命名')}"), ("meta", meta)]
 
 
-def journey_blocks(steps: list[dict[str, Any]], shots: list[dict[str, Any]], number: int) -> list[tuple]:
-    rows = [[str(index), step["action"], step["reason"], refs(step["figures"])] for index, step in enumerate(steps, 1)]
+def journey_blocks(
+    steps: list[dict[str, Any]], shots: list[dict[str, Any]], number: int
+) -> list[tuple]:
+    rows = [
+        [str(index), step["action"], step["reason"], refs(step["figures"])]
+        for index, step in enumerate(steps, 1)
+    ]
     blocks: list[tuple] = [("h2", f"{number}. 操作过程")]
-    blocks.append(("table", ["步骤", "操作", "目的", "截图"], rows) if rows else ("p", "没有操作记录。"))
+    blocks.append(
+        ("table", ["步骤", "操作", "目的", "截图"], rows)
+        if rows
+        else ("p", "没有操作记录。")
+    )
     blocks.append(("h2", f"{number + 1}. 截图"))
     blocks.append(("figures", shots) if shots else ("p", "没有截图。"))
     return blocks
@@ -328,12 +472,36 @@ def bullet_section(title: str, values: list[str] | None) -> list[tuple]:
     return [("h3", title), ("ul", values)] if values else []
 
 
-def ux_blocks(manifest: dict[str, Any], analysis: dict[str, Any], steps: list[dict[str, Any]], shots: list[dict[str, Any]], events: list[dict[str, Any]]) -> list[tuple]:
+def ux_blocks(
+    manifest: dict[str, Any],
+    analysis: dict[str, Any],
+    steps: list[dict[str, Any]],
+    shots: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> list[tuple]:
     blocks = header_blocks(manifest, "App 体验走查报告", analysis["status"], events)
-    blocks += [("h2", "1. 结论"), ("p", analysis["summary"]), ("ul", analysis["takeaways"])]
-    blocks += [("h2", "2. 功能模块"), ("table", ["模块", "作用", "实际看到", "体验", "截图"], [
-        [m["name"], m["purpose"], m["seen"], m["rating"], refs(m.get("figures"))] for m in analysis["modules"]
-    ])]
+    blocks += [
+        ("h2", "1. 结论"),
+        ("p", analysis["summary"]),
+        ("ul", analysis["takeaways"]),
+    ]
+    blocks += [
+        ("h2", "2. 功能模块"),
+        (
+            "table",
+            ["模块", "作用", "实际看到", "体验", "截图"],
+            [
+                [
+                    m["name"],
+                    m["purpose"],
+                    m["seen"],
+                    m["rating"],
+                    refs(m.get("figures")),
+                ]
+                for m in analysis["modules"]
+            ],
+        ),
+    ]
     strengths = analysis.get("strengths") or []
     blocks.append(("h2", "3. 做得好的地方"))
     if strengths:
@@ -344,12 +512,28 @@ def ux_blocks(manifest: dict[str, Any], analysis: dict[str, Any], steps: list[di
         blocks.append(("ul", lines))
     else:
         blocks.append(("p", "本次没有记录突出的优点。"))
-    issues = sorted(analysis.get("issues") or [], key=lambda item: SEVERITY.index(item["severity"]))
+    issues = sorted(
+        analysis.get("issues") or [], key=lambda item: SEVERITY.index(item["severity"])
+    )
     blocks.append(("h2", "4. 问题与建议"))
     if issues:
-        blocks.append(("table", ["优先级", "问题", "证据", "影响", "建议", "截图"], [
-            [SEVERITY_LABEL[i["severity"]], i["title"], i["evidence"], i["impact"], i["suggestion"], refs(i.get("figures"))] for i in issues
-        ]))
+        blocks.append(
+            (
+                "table",
+                ["优先级", "问题", "证据", "影响", "建议", "截图"],
+                [
+                    [
+                        SEVERITY_LABEL[i["severity"]],
+                        i["title"],
+                        i["evidence"],
+                        i["impact"],
+                        i["suggestion"],
+                        refs(i.get("figures")),
+                    ]
+                    for i in issues
+                ],
+            )
+        )
     else:
         blocks.append(("p", "本次没有发现有截图佐证的问题。"))
     blocks.append(("h2", "5. 覆盖范围"))
@@ -359,19 +543,39 @@ def ux_blocks(manifest: dict[str, Any], analysis: dict[str, Any], steps: list[di
     return blocks + journey_blocks(steps, shots, 6)
 
 
-def collect_blocks(manifest: dict[str, Any], analysis: dict[str, Any], items: dict[str, dict[str, Any]], steps: list[dict[str, Any]], shots: list[dict[str, Any]], events: list[dict[str, Any]]) -> list[tuple]:
+def collect_blocks(
+    manifest: dict[str, Any],
+    analysis: dict[str, Any],
+    items: dict[str, dict[str, Any]],
+    steps: list[dict[str, Any]],
+    shots: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> list[tuple]:
     themes = sorted(analysis["themes"], key=lambda theme: -len(theme["items"]))
     themed = {ref for theme in themes for ref in theme["items"]}
-    excluded = {ref for group in analysis.get("excluded") or [] for ref in group.get("items") or []}
+    excluded = {
+        ref
+        for group in analysis.get("excluded") or []
+        for ref in group.get("items") or []
+    }
     unclassified = [ref for ref in items if ref not in themed and ref not in excluded]
     total = len(items)
 
     blocks = header_blocks(manifest, "内容采集报告", analysis["status"], events)
-    blocks += [("h2", "1. 结论"), ("p", f"问题：{analysis['question']}"), ("p", analysis["summary"]), ("ul", analysis["takeaways"])]
+    blocks += [
+        ("h2", "1. 结论"),
+        ("p", f"问题：{analysis['question']}"),
+        ("p", analysis["summary"]),
+        ("ul", analysis["takeaways"]),
+    ]
 
     scope = []
     for done in collect_scope(events):
-        ending = "已到列表底部" if done.get("reached_end") else "达到设定的屏数上限，后面还有内容"
+        ending = (
+            "已到列表底部"
+            if done.get("reached_end")
+            else "达到设定的屏数上限，后面还有内容"
+        )
         scope.append(f"{done.get('label')}：滚动 {done.get('screens')} 屏，{ending}")
         if done.get("comments_per_post"):
             missed = []
@@ -383,13 +587,34 @@ def collect_blocks(manifest: dict[str, Any], analysis: dict[str, Any], items: di
                 f"评论：打开 {done.get('opened')} 条帖子，每条最多取默认排序的前 {done['comments_per_post']} 条评论，共 {done.get('comments')} 条"
                 + ("；" + "，".join(missed) if missed else "")
             )
-    scope.append(f"共采集 {total} 条，归入主题 {len(themed)} 条，排除 {len(excluded)} 条，未归类 {len(unclassified)} 条")
-    scope.append(f"采集时间 {local_time(manifest.get('started_at'))}；帖子里的“N 天前”“M 月 D 日”都相对这个时间，App 通常不显示年份")
+    scope.append(
+        f"共采集 {total} 条，归入主题 {len(themed)} 条，排除 {len(excluded)} 条，未归类 {len(unclassified)} 条"
+    )
+    scope.append(
+        f"采集时间 {local_time(manifest.get('started_at'))}；帖子里的“N 天前”“M 月 D 日”都相对这个时间，App 通常不显示年份"
+    )
     blocks += [("h2", "2. 采集范围"), ("ul", scope)]
 
-    blocks += [("h2", "3. 主题分布"), ("table", ["主题", "帖子数", "占比", "说明"], [
-        [t["name"], str(len(t["items"])), f"{round(len(t['items']) * 100 / max(total, 1))}%", t.get("description", "")] for t in themes
-    ]), ("note", "一条帖子可以同时属于多个主题，所以各主题数量相加可能超过总数。占比以全部采集条数为分母。")]
+    blocks += [
+        ("h2", "3. 主题分布"),
+        (
+            "table",
+            ["主题", "帖子数", "占比", "说明"],
+            [
+                [
+                    t["name"],
+                    str(len(t["items"])),
+                    f"{round(len(t['items']) * 100 / max(total, 1))}%",
+                    t.get("description", ""),
+                ]
+                for t in themes
+            ],
+        ),
+        (
+            "note",
+            "一条帖子可以同时属于多个主题，所以各主题数量相加可能超过总数。占比以全部采集条数为分母。",
+        ),
+    ]
 
     blocks.append(("h2", "4. 主题详情"))
     keywords = analysis.get("keywords") or []
@@ -397,24 +622,48 @@ def collect_blocks(manifest: dict[str, Any], analysis: dict[str, Any], items: di
     all_comments = comment_index(items)
     for theme in themes:
         notes = theme.get("notes") or {}
-        head = ["编号", "发布者", "日期"] + (["要点"] if notes else []) + ["内容摘要", "互动数"] + (["评论"] if has_comments else [])
+        head = (
+            ["编号", "发布者", "日期"]
+            + (["要点"] if notes else [])
+            + ["内容摘要", "互动数"]
+            + (["评论"] if has_comments else [])
+        )
         rows = []
         for ref in theme["items"]:
             item = items[ref]
             row = [ref, item.get("author") or "—", item.get("date") or "—"]
             if notes:
                 row.append(notes.get(ref, "—"))
-            row += [excerpt(item.get("full_body") or item["body"], keywords), " / ".join(item.get("counts") or []) or "—"]
+            row += [
+                excerpt(item.get("full_body") or item["body"], keywords),
+                " / ".join(item.get("counts") or []) or "—",
+            ]
             if has_comments:
                 row.append(comment_cell(item))
             rows.append(row)
-        blocks += [("h3", f"{theme['name']}（{len(theme['items'])} 条）"), ("p", theme.get("description", "")), ("table", head, rows)]
+        blocks += [
+            ("h3", f"{theme['name']}（{len(theme['items'])} 条）"),
+            ("p", theme.get("description", "")),
+            ("table", head, rows),
+        ]
         quoted = [ref for ref in theme.get("comments") or [] if ref in all_comments]
         if quoted:
-            blocks.append(("table", ["评论", "所属帖子", "评论者", "内容", "点赞"], [
-                [ref, ref.split("-")[0], all_comments[ref].get("author") or "—", excerpt(all_comments[ref]["body"], keywords, 90), all_comments[ref].get("likes") or "—"]
-                for ref in quoted
-            ]))
+            blocks.append(
+                (
+                    "table",
+                    ["评论", "所属帖子", "评论者", "内容", "点赞"],
+                    [
+                        [
+                            ref,
+                            ref.split("-")[0],
+                            all_comments[ref].get("author") or "—",
+                            excerpt(all_comments[ref]["body"], keywords, 90),
+                            all_comments[ref].get("likes") or "—",
+                        ]
+                        for ref in quoted
+                    ],
+                )
+            )
     note = "发布者和互动数由页面结构推断。互动数按 App 显示顺序排列（酷安为点赞 / 评论），不同 App 含义可能不同。"
     if has_comments:
         note += "「评论」列为“已采集 / 页面显示总数”，总数通常包含楼中楼回复。"
@@ -423,24 +672,52 @@ def collect_blocks(manifest: dict[str, Any], analysis: dict[str, Any], items: di
     section = 5
     if excluded:
         blocks.append(("h2", f"{section}. 排除的内容"))
-        blocks.append(("ul", [
-            f"{group['reason']}：{len(group['items'])} 条（{'、'.join(group['items'])}）"
-            for group in analysis.get("excluded") or [] if group.get("items")
-        ]))
+        blocks.append(
+            (
+                "ul",
+                [
+                    f"{group['reason']}：{len(group['items'])} 条（{'、'.join(group['items'])}）"
+                    for group in analysis.get("excluded") or []
+                    if group.get("items")
+                ],
+            )
+        )
         section += 1
     blocks.append(("h2", f"{section}. 局限与下一步"))
     blocks += bullet_section("局限", analysis.get("limitations"))
     blocks += bullet_section("建议的下一步", analysis.get("next_steps"))
     if unclassified:
-        blocks += [("h2", "附：未归类帖子"), ("table", ["编号", "发布者", "内容摘要"], [
-            [ref, items[ref].get("author") or "—", excerpt(items[ref]["body"], analysis.get("keywords"))] for ref in unclassified
-        ])]
+        blocks += [
+            ("h2", "附：未归类帖子"),
+            (
+                "table",
+                ["编号", "发布者", "内容摘要"],
+                [
+                    [
+                        ref,
+                        items[ref].get("author") or "—",
+                        excerpt(items[ref]["body"], analysis.get("keywords")),
+                    ]
+                    for ref in unclassified
+                ],
+            ),
+        ]
     return blocks + journey_blocks(steps, shots, section + 1)
 
 
-def draft_blocks(manifest: dict[str, Any], steps: list[dict[str, Any]], shots: list[dict[str, Any]], events: list[dict[str, Any]]) -> list[tuple]:
+def draft_blocks(
+    manifest: dict[str, Any],
+    steps: list[dict[str, Any]],
+    shots: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> list[tuple]:
     blocks = header_blocks(manifest, "走查记录（草稿）", None, events)
-    blocks.append(("note", "这是草稿：只有操作过程和截图，还没有结论。运行 report.py --init 生成 analysis.json，填写后再生成正式报告。"))
+    blocks.append(
+        (
+            "note",
+            "这是草稿：只有操作过程和截图，还没有结论。运行 report.py --init 生成 analysis.json，填写后再生成正式报告。",
+        )
+    )
     return blocks + journey_blocks(steps, shots, 1)
 
 
@@ -469,11 +746,18 @@ def to_markdown(blocks: list[tuple]) -> str:
             _, head, rows = block
             out.append("| " + " | ".join(head) + " |")
             out.append("|" + "---|" * len(head))
-            out += ["| " + " | ".join(md_cell(cell) for cell in row) + " |" for row in rows]
+            out += [
+                "| " + " | ".join(md_cell(cell) for cell in row) + " |" for row in rows
+            ]
             out.append("")
         elif kind == "figures":
             for shot in block[1]:
-                out += [f"### 图{shot['figure']}　{shot.get('title', '')}", "", f"![图{shot['figure']} {shot.get('title', '')}](evidence/{shot['image']})", ""]
+                out += [
+                    f"### 图{shot['figure']}　{shot.get('title', '')}",
+                    "",
+                    f"![图{shot['figure']} {shot.get('title', '')}](evidence/{shot['image']})",
+                    "",
+                ]
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -487,7 +771,9 @@ def embedded_image(path: Path, max_width: int = 640) -> str:
             with Image.open(path) as image:
                 image = image.convert("RGB")
                 if image.width > max_width:
-                    image = image.resize((max_width, round(image.height * max_width / image.width)))
+                    image = image.resize(
+                        (max_width, round(image.height * max_width / image.width))
+                    )
                 buffer = BytesIO()
                 image.save(buffer, "JPEG", quality=80)
                 data = buffer.getvalue()
@@ -497,14 +783,29 @@ def embedded_image(path: Path, max_width: int = 640) -> str:
         with tempfile.TemporaryDirectory() as temp:
             target = Path(temp) / "image.jpg"
             result = subprocess.run(
-                ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "80", "--resampleWidth", str(max_width), str(path), "--out", str(target)],
+                [
+                    "sips",
+                    "-s",
+                    "format",
+                    "jpeg",
+                    "-s",
+                    "formatOptions",
+                    "80",
+                    "--resampleWidth",
+                    str(max_width),
+                    str(path),
+                    "--out",
+                    str(target),
+                ],
                 capture_output=True,
             )
             if result.returncode == 0 and target.exists():
                 data = target.read_bytes()
     if data:
         return "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")
-    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode(
+        "ascii"
+    )
 
 
 CSS = """
@@ -533,14 +834,32 @@ def to_html(blocks: list[tuple], run: Path, title: str) -> str:
         elif kind == "note":
             out.append(f"<blockquote>{esc(block[1])}</blockquote>")
         elif kind == "meta":
-            out.append("<dl class=\"meta\">" + "".join(f"<dt>{esc(label)}</dt><dd>{esc(str(value))}</dd>" for label, value in block[1]) + "</dl>")
+            out.append(
+                '<dl class="meta">'
+                + "".join(
+                    f"<dt>{esc(label)}</dt><dd>{esc(str(value))}</dd>"
+                    for label, value in block[1]
+                )
+                + "</dl>"
+            )
         elif kind == "ul":
-            out.append("<ul>" + "".join(f"<li>{esc(str(item))}</li>" for item in block[1]) + "</ul>")
+            out.append(
+                "<ul>"
+                + "".join(f"<li>{esc(str(item))}</li>" for item in block[1])
+                + "</ul>"
+            )
         elif kind == "table":
             _, head, rows = block
             out.append(
-                "<table><thead><tr>" + "".join(f"<th scope=\"col\">{esc(h)}</th>" for h in head) + "</tr></thead><tbody>"
-                + "".join("<tr>" + "".join(f"<td>{esc(str(cell))}</td>" for cell in row) + "</tr>" for row in rows)
+                "<table><thead><tr>"
+                + "".join(f'<th scope="col">{esc(h)}</th>' for h in head)
+                + "</tr></thead><tbody>"
+                + "".join(
+                    "<tr>"
+                    + "".join(f"<td>{esc(str(cell))}</td>" for cell in row)
+                    + "</tr>"
+                    for row in rows
+                )
                 + "</tbody></table>"
             )
         elif kind == "figures":
@@ -548,10 +867,12 @@ def to_html(blocks: list[tuple], run: Path, title: str) -> str:
             for shot in block[1]:
                 caption = f"图{shot['figure']}　{shot.get('title', '')}"
                 src = embedded_image(run / "evidence" / shot["image"])
-                cards.append(f"<figure><img src=\"{src}\" alt=\"{esc(caption)}\"><figcaption>{esc(caption)}</figcaption></figure>")
-            out.append("<div class=\"figures\">" + "".join(cards) + "</div>")
+                cards.append(
+                    f'<figure><img src="{src}" alt="{esc(caption)}"><figcaption>{esc(caption)}</figcaption></figure>'
+                )
+            out.append('<div class="figures">' + "".join(cards) + "</div>")
     body = "\n".join(out)
-    return f"<!doctype html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{esc(title)}</title><style>{CSS}</style></head>\n<body>\n{body}\n</body></html>\n"
+    return f'<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)}</title><style>{CSS}</style></head>\n<body>\n{body}\n</body></html>\n'
 
 
 # ---------------------------------------------------------------- CLI
@@ -565,12 +886,24 @@ def chat_summary(analysis: dict[str, Any], paths: list[Path]) -> str:
 
 
 def main() -> int:
-    cli = argparse.ArgumentParser(description="把一次 app-walkthrough 走查生成报告（report.md + report.html）")
+    cli = argparse.ArgumentParser(
+        description="把一次 app-walkthrough 走查生成报告（report.md + report.html）"
+    )
     cli.add_argument("--run", required=True, help="device.py start-run 输出的目录")
     cli.add_argument("--init", action="store_true", help="生成 analysis.json 骨架")
-    cli.add_argument("--mode", choices=["ux", "collect"], help="配合 --init；默认有 collected.jsonl 时为 collect，否则为 ux")
-    cli.add_argument("--force", action="store_true", help="配合 --init，覆盖已有 analysis.json")
-    cli.add_argument("--draft", action="store_true", help="不需要 analysis.json，只渲染操作过程和截图")
+    cli.add_argument(
+        "--mode",
+        choices=["ux", "collect"],
+        help="配合 --init；默认有 collected.jsonl 时为 collect，否则为 ux",
+    )
+    cli.add_argument(
+        "--force", action="store_true", help="配合 --init，覆盖已有 analysis.json"
+    )
+    cli.add_argument(
+        "--draft",
+        action="store_true",
+        help="不需要 analysis.json，只渲染操作过程和截图",
+    )
     args = cli.parse_args()
 
     run = Path(args.run).expanduser().resolve()
@@ -586,13 +919,22 @@ def main() -> int:
         if analysis_path.exists() and not args.force:
             raise SystemExit(f"{analysis_path} 已存在；要重写请加 --force")
         mode = args.mode or ("collect" if items else "ux")
-        analysis_path.write_text(json.dumps(skeleton(mode, manifest), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        analysis_path.write_text(
+            json.dumps(skeleton(mode, manifest), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
         print(analysis_path)
         comments = len(comment_index(items))
-        detail = f"；帖子 {len(items)} 条（编号 p001–p{len(items):03d}，见 collected.jsonl）" if items else ""
+        detail = (
+            f"；帖子 {len(items)} 条（编号 p001–p{len(items):03d}，见 collected.jsonl）"
+            if items
+            else ""
+        )
         if comments:
             detail += f"；评论 {comments} 条（编号如 p001-c01）"
-        print(f"模式：{mode}；截图 {len(shots)} 张（figures 用图号 1–{len(shots)}）{detail}")
+        print(
+            f"模式：{mode}；截图 {len(shots)} 张（figures 用图号 1–{len(shots)}）{detail}"
+        )
         return 0
 
     steps = timeline(events, shots)
@@ -602,7 +944,9 @@ def main() -> int:
     else:
         analysis = load_json(analysis_path)
         if analysis is None:
-            raise SystemExit("还没有 analysis.json。先运行 report.py --run RUN_DIR --init，填写后再生成；只看过程可以加 --draft。")
+            raise SystemExit(
+                "还没有 analysis.json。先运行 report.py --run RUN_DIR --init，填写后再生成；只看过程可以加 --draft。"
+            )
         errors = validate(analysis, shots, items)
         if errors:
             print("analysis.json 需要修改：", file=sys.stderr)
@@ -624,10 +968,17 @@ def main() -> int:
         return 0
     if analysis["mode"] == "collect":
         themed = {ref for theme in analysis["themes"] for ref in theme["items"]}
-        excluded = {ref for group in analysis.get("excluded") or [] for ref in group.get("items") or []}
+        excluded = {
+            ref
+            for group in analysis.get("excluded") or []
+            for ref in group.get("items") or []
+        }
         missing = [ref for ref in items if ref not in themed and ref not in excluded]
         if missing:
-            print(f"提示：{len(missing)} 条帖子未归类（{'、'.join(missing)}），已列在报告附录。", file=sys.stderr)
+            print(
+                f"提示：{len(missing)} 条帖子未归类（{'、'.join(missing)}），已列在报告附录。",
+                file=sys.stderr,
+            )
     print(chat_summary(analysis, [md_path, html_path]))
     return 0
 

@@ -7,6 +7,8 @@ Does not touch a phone or Appium.
 from __future__ import annotations
 
 import json
+import os
+import struct
 import struct
 import zlib
 import subprocess
@@ -19,17 +21,35 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / "scripts" / "report.py"
 
 
-def tiny_png(width: int = 2, height: int = 2, rgb: tuple[int, int, int] = (200, 160, 90)) -> bytes:
+def tiny_png(
+    width: int = 2, height: int = 2, rgb: tuple[int, int, int] = (200, 160, 90)
+) -> bytes:
     """A solid-colour PNG built from scratch, so the test needs no image files."""
+
     def chunk(kind: bytes, body: bytes) -> bytes:
-        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        return (
+            struct.pack(">I", len(body))
+            + kind
+            + body
+            + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        )
+
     scanline = b"\x00" + bytes(rgb) * width  # filter byte 0, then the pixels
     header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)  # 8-bit RGB
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(scanline * height)) + chunk(b"IEND", b"")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(scanline * height))
+        + chunk(b"IEND", b"")
+    )
 
 
 def run_report(run: Path, *extra: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(REPORT), "--run", str(run), *extra], capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, str(REPORT), "--run", str(run), *extra],
+        capture_output=True,
+        text=True,
+    )
 
 
 def make_run(base: Path, name: str, posts: list[dict] | None = None) -> Path:
@@ -37,110 +57,270 @@ def make_run(base: Path, name: str, posts: list[dict] | None = None) -> Path:
     shots = run / "evidence"
     shots.mkdir(parents=True)
     manifest = {
-        "title": name, "task": "离线测试", "bundle_id": "com.example.app",
-        "app": {"name": "示例", "version": "1.0"}, "device": {"model": "iPhone 15 Plus", "os_version": "26.1"},
+        "title": name,
+        "task": "离线测试",
+        "bundle_id": "com.example.app",
+        "app": {"name": "示例", "version": "1.0"},
+        "device": {"model": "iPhone 15 Plus", "os_version": "26.1"},
         "started_at": "2026-01-01T00:00:00Z",
     }
-    (run / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    (run / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+    )
     events = [
         {"timestamp": "2026-01-01T00:00:00Z", "kind": "run_started"},
-        {"timestamp": "2026-01-01T00:00:05Z", "kind": "action", "type": "tap", "x": 10, "y": 20, "target_text": "热榜", "reason": "切换标签"},
-        {"timestamp": "2026-01-01T00:00:06Z", "kind": "evidence", "image": "evidence-001.png"},
-        {"timestamp": "2026-01-01T00:00:08Z", "kind": "action", "type": "scroll", "direction": "down", "reason": "看下一屏"},
+        {
+            "timestamp": "2026-01-01T00:00:05Z",
+            "kind": "action",
+            "type": "tap",
+            "x": 10,
+            "y": 20,
+            "target_text": "热榜",
+            "reason": "切换标签",
+        },
+        {
+            "timestamp": "2026-01-01T00:00:06Z",
+            "kind": "evidence",
+            "image": "evidence-001.png",
+        },
+        {
+            "timestamp": "2026-01-01T00:00:08Z",
+            "kind": "action",
+            "type": "scroll",
+            "direction": "down",
+            "reason": "看下一屏",
+        },
         {"timestamp": "2026-01-01T00:00:09Z", "kind": "scroll_check", "changed": False},
     ]
-    (shots / "evidence-001.json").write_text(json.dumps({"title": "热榜", "reason": "验证", "image": "evidence-001.png"}, ensure_ascii=False), encoding="utf-8")
+    (shots / "evidence-001.json").write_text(
+        json.dumps(
+            {"title": "热榜", "reason": "验证", "image": "evidence-001.png"},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     (shots / "evidence-001.png").write_bytes(tiny_png())
     if posts is not None:
-        events.append({"timestamp": "2026-01-01T00:01:00Z", "kind": "action", "type": "collect", "label": "关键词 / 动态", "reason": "采集"})
-        events.append({"timestamp": "2026-01-01T00:02:00Z", "kind": "collect_done", "label": "关键词 / 动态", "screens": 3, "total": len(posts), "reached_end": True,
-                       "comments_per_post": 5, "opened": 1, "open_failed": 0, "not_opened": 1, "comments": 2})
+        events.append(
+            {
+                "timestamp": "2026-01-01T00:01:00Z",
+                "kind": "action",
+                "type": "collect",
+                "label": "关键词 / 动态",
+                "reason": "采集",
+            }
+        )
+        events.append(
+            {
+                "timestamp": "2026-01-01T00:02:00Z",
+                "kind": "collect_done",
+                "label": "关键词 / 动态",
+                "screens": 3,
+                "total": len(posts),
+                "reached_end": True,
+                "comments_per_post": 5,
+                "opened": 1,
+                "open_failed": 0,
+                "not_opened": 1,
+                "comments": 2,
+            }
+        )
         # U+2028 inside a body must not split the JSONL row.
-        (run / "collected.jsonl").write_text("".join(json.dumps(p, ensure_ascii=False) + "\n" for p in posts), encoding="utf-8")
-    (run / "events.jsonl").write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in events), encoding="utf-8")
+        (run / "collected.jsonl").write_text(
+            "".join(json.dumps(p, ensure_ascii=False) + "\n" for p in posts),
+            encoding="utf-8",
+        )
+    (run / "events.jsonl").write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in events),
+        encoding="utf-8",
+    )
     return run
 
 
 def check_ux_report(base: Path) -> None:
     run = make_run(base, "ux")
-    assert run_report(run).returncode != 0, "must refuse to render without analysis.json"
+    assert run_report(run).returncode != 0, (
+        "must refuse to render without analysis.json"
+    )
 
     draft = run_report(run, "--draft")
     assert draft.returncode == 0, draft.stderr
     assert "草稿" in (run / "report.md").read_text(encoding="utf-8")
 
     assert run_report(run, "--init").returncode == 0
-    assert run_report(run, "--init").returncode != 0, "--init must not overwrite without --force"
+    assert run_report(run, "--init").returncode != 0, (
+        "--init must not overwrite without --force"
+    )
     blocked = run_report(run)
     assert blocked.returncode == 2 and "TODO" in blocked.stderr, blocked.stderr
 
     analysis = {
-        "mode": "ux", "status": "completed",
+        "mode": "ux",
+        "status": "completed",
         "summary": "热榜入口清楚，切换后内容立即刷新。",
         "takeaways": ["热榜标签在顶部第四位，一次点击可达（图1）"],
-        "modules": [{"name": "热榜", "purpose": "查看热门内容", "seen": "排行列表", "rating": "清晰", "figures": [1]}],
-        "strengths": [{"title": "排行醒目", "detail": "序号用红色标出", "figures": [1]}],
-        "issues": [{"severity": "Low", "title": "示例问题", "evidence": "示例", "impact": "示例", "suggestion": "示例", "figures": [9]}],
+        "modules": [
+            {
+                "name": "热榜",
+                "purpose": "查看热门内容",
+                "seen": "排行列表",
+                "rating": "清晰",
+                "figures": [1],
+            }
+        ],
+        "strengths": [
+            {"title": "排行醒目", "detail": "序号用红色标出", "figures": [1]}
+        ],
+        "issues": [
+            {
+                "severity": "Low",
+                "title": "示例问题",
+                "evidence": "示例",
+                "impact": "示例",
+                "suggestion": "示例",
+                "figures": [9],
+            }
+        ],
         "not_tested": ["未点开帖子"],
     }
-    (run / "analysis.json").write_text(json.dumps(analysis, ensure_ascii=False), encoding="utf-8")
+    (run / "analysis.json").write_text(
+        json.dumps(analysis, ensure_ascii=False), encoding="utf-8"
+    )
     bad = run_report(run)
     assert bad.returncode == 2 and "图9" in bad.stderr, bad.stderr
 
     analysis["issues"][0]["figures"] = [1]
-    (run / "analysis.json").write_text(json.dumps(analysis, ensure_ascii=False), encoding="utf-8")
+    (run / "analysis.json").write_text(
+        json.dumps(analysis, ensure_ascii=False), encoding="utf-8"
+    )
     ok = run_report(run)
     assert ok.returncode == 0, ok.stderr
     assert "结论：热榜入口清楚" in ok.stdout
     md = (run / "report.md").read_text(encoding="utf-8")
-    for expected in ("## 1. 结论", "热榜入口清楚", "点击「热榜」", "页面无变化", "示例 1.0（com.example.app）", "iPhone 15 Plus / iOS 26.1"):
+    for expected in (
+        "## 1. 结论",
+        "热榜入口清楚",
+        "点击「热榜」",
+        "页面无变化",
+        "示例 1.0（com.example.app）",
+        "iPhone 15 Plus / iOS 26.1",
+    ):
         assert expected in md, expected
     assert "(10, 20)" not in md, "raw coordinates must not appear in the report"
     html = (run / "report.html").read_text(encoding="utf-8")
-    assert "data:image/" in html and "evidence/" not in html, "HTML must embed screenshots"
+    assert "data:image/" in html and "evidence/" not in html, (
+        "HTML must embed screenshots"
+    )
 
 
 def check_collect_report(base: Path) -> None:
     posts = [
-        {"id": "p001", "author": "甲", "date": "3天前", "body": "宽带被运营商认定跑PCDN后限速\u2028现在要签字才能解除", "labels": [], "counts": ["2", "8"],
-         "comment_status": "ok", "comment_total": 8, "comments": [
-             {"id": "p001-c01", "author": "评论者A", "date": "昨天", "body": "我也被限速了，打客服说要上门检查", "likes": "5", "labels": [], "replies": [], "reply_total": None},
-             {"id": "p001-c02", "author": "评论者B", "date": "前天", "body": "换运营商吧", "likes": None, "labels": [], "replies": [], "reply_total": None}]},
-        {"id": "p002", "author": "乙", "date": "5月1日", "body": "出机顶盒，不跑PCDN，适合老人使用，联系我", "labels": [], "counts": [], "comment_status": "not_opened"},
-        {"id": "p003", "author": "丙", "date": None, "body": "这条帖子没有被归类，应该出现在附录里，内容足够长", "labels": [], "counts": []},
+        {
+            "id": "p001",
+            "author": "甲",
+            "date": "3天前",
+            "body": "宽带被运营商认定跑PCDN后限速\u2028现在要签字才能解除",
+            "labels": [],
+            "counts": ["2", "8"],
+            "comment_status": "ok",
+            "comment_total": 8,
+            "comments": [
+                {
+                    "id": "p001-c01",
+                    "author": "评论者A",
+                    "date": "昨天",
+                    "body": "我也被限速了，打客服说要上门检查",
+                    "likes": "5",
+                    "labels": [],
+                    "replies": [],
+                    "reply_total": None,
+                },
+                {
+                    "id": "p001-c02",
+                    "author": "评论者B",
+                    "date": "前天",
+                    "body": "换运营商吧",
+                    "likes": None,
+                    "labels": [],
+                    "replies": [],
+                    "reply_total": None,
+                },
+            ],
+        },
+        {
+            "id": "p002",
+            "author": "乙",
+            "date": "5月1日",
+            "body": "出机顶盒，不跑PCDN，适合老人使用，联系我",
+            "labels": [],
+            "counts": [],
+            "comment_status": "not_opened",
+        },
+        {
+            "id": "p003",
+            "author": "丙",
+            "date": None,
+            "body": "这条帖子没有被归类，应该出现在附录里，内容足够长",
+            "labels": [],
+            "counts": [],
+        },
     ]
     run = make_run(base, "collect", posts)
     init = run_report(run, "--init")
     assert init.returncode == 0 and "collect" in init.stdout, init.stdout
 
     analysis = {
-        "mode": "collect", "status": "partial", "question": "用户遇到了哪些问题",
+        "mode": "collect",
+        "status": "partial",
+        "question": "用户遇到了哪些问题",
         "keywords": ["PCDN"],
         "summary": "3 条里 1 条反映运营商限速。",
         "takeaways": ["运营商限速（1 条）"],
-        "themes": [{"name": "运营商限速", "description": "被限速", "items": ["p001", "p404"], "notes": {"p001": "要签字解除"}, "comments": ["p001-c01", "p001-c99"]}],
+        "themes": [
+            {
+                "name": "运营商限速",
+                "description": "被限速",
+                "items": ["p001", "p404"],
+                "notes": {"p001": "要签字解除"},
+                "comments": ["p001-c01", "p001-c99"],
+            }
+        ],
         "excluded": [{"reason": "二手广告", "items": ["p002"]}],
-        "limitations": ["只看了 3 屏"], "next_steps": ["换排序再采"],
+        "limitations": ["只看了 3 屏"],
+        "next_steps": ["换排序再采"],
     }
-    (run / "analysis.json").write_text(json.dumps(analysis, ensure_ascii=False), encoding="utf-8")
+    (run / "analysis.json").write_text(
+        json.dumps(analysis, ensure_ascii=False), encoding="utf-8"
+    )
     bad = run_report(run)
-    assert bad.returncode == 2 and "p404" in bad.stderr and "p001-c99" in bad.stderr, bad.stderr
+    assert bad.returncode == 2 and "p404" in bad.stderr and "p001-c99" in bad.stderr, (
+        bad.stderr
+    )
 
     analysis["themes"][0]["items"] = ["p001"]
     analysis["themes"][0]["comments"] = ["p001-c01"]
-    (run / "analysis.json").write_text(json.dumps(analysis, ensure_ascii=False), encoding="utf-8")
+    (run / "analysis.json").write_text(
+        json.dumps(analysis, ensure_ascii=False), encoding="utf-8"
+    )
     ok = run_report(run)
     assert ok.returncode == 0, ok.stderr
     assert "p003" in ok.stderr, "unclassified posts must be reported"
     md = (run / "report.md").read_text(encoding="utf-8")
     for expected in (
-        "问题：用户遇到了哪些问题", "共采集 3 条，归入主题 1 条，排除 1 条，未归类 1 条", "| 运营商限速 | 1 | 33% |",
-        "要签字解除", "附：未归类帖子", "已到列表底部",
+        "问题：用户遇到了哪些问题",
+        "共采集 3 条，归入主题 1 条，排除 1 条，未归类 1 条",
+        "| 运营商限速 | 1 | 33% |",
+        "要签字解除",
+        "附：未归类帖子",
+        "已到列表底部",
         "评论：打开 1 条帖子，每条最多取默认排序的前 5 条评论，共 2 条；1 条没来得及打开",
-        "| 2 / 8 |", "| p001-c01 | p001 | 评论者A | 我也被限速了",
+        "| 2 / 8 |",
+        "| p001-c01 | p001 | 评论者A | 我也被限速了",
     ):
         assert expected in md, expected
-    assert "评论 {comments}" not in init.stdout and "评论 2 条" in init.stdout, init.stdout
+    assert "评论 {comments}" not in init.stdout and "评论 2 条" in init.stdout, (
+        init.stdout
+    )
 
 
 SOURCE_FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
@@ -220,17 +400,43 @@ def check_device_helpers() -> None:
     sys.path.insert(0, str(ROOT / "scripts"))
     import device  # noqa: E402
 
-    help_text = subprocess.run([sys.executable, str(ROOT / "scripts" / "device.py"), "--help"], check=True, capture_output=True, text=True).stdout
-    for command in ("start-run", "screenshot", "texts", "tap-text", "scroll", "collect", "close"):
+    help_text = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "device.py"), "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    for command in (
+        "start-run",
+        "screenshot",
+        "texts",
+        "tap-text",
+        "scroll",
+        "collect",
+        "close",
+    ):
         assert command in help_text, command
 
     tree = device.ET.fromstring(SOURCE_FIXTURE)
     texts = [item["text"] for item in device.page_texts(tree)]
     assert "热榜" in texts and "示例" in texts, texts
-    for noise in ("Demo.MainView", "ic share outline white 24dp", "AdditionalDimmingOverlay", "隐藏文字"):
+    for noise in (
+        "Demo.MainView",
+        "ic share outline white 24dp",
+        "AdditionalDimmingOverlay",
+        "隐藏文字",
+    ):
         assert noise not in texts, noise
-    distinct = device.innermost([item for item in device.page_texts(tree, dedupe=False) if item["text"] == "热榜"])
-    assert len(distinct) == 2 and {item["type"] for item in distinct} == {"StaticText"}, distinct
+    distinct = device.innermost(
+        [
+            item
+            for item in device.page_texts(tree, dedupe=False)
+            if item["text"] == "热榜"
+        ]
+    )
+    assert len(distinct) == 2 and {item["type"] for item in distinct} == {
+        "StaticText"
+    }, distinct
     assert any(word in "立即购买" for word in device.RISKY_WORDS)
     assert not any(word in "热榜" for word in device.RISKY_WORDS)
 
@@ -241,41 +447,82 @@ def check_device_helpers() -> None:
     assert post["counts"] == ["6", "44"], post
     assert "iPhone 15" in post["labels"] and "话题" in post["labels"], post
 
-    partial = {"author": None, "date": None, "body": post["body"], "labels": [], "counts": [], "extra": []}
+    partial = {
+        "author": None,
+        "date": None,
+        "body": post["body"],
+        "labels": [],
+        "counts": [],
+        "extra": [],
+    }
     device.merge_post(partial, post)
     assert partial["author"] == "作者甲" and partial["counts"] == ["6", "44"], partial
 
-    apps = [{"bundleIdentifier": "com.name.WebDriverAgentRunner.xctrunner"}, {"bundleIdentifier": "com.facebook.WebDriverAgentRunner.xctrunner"}]
+    apps = [
+        {"bundleIdentifier": "com.name.WebDriverAgentRunner.xctrunner"},
+        {"bundleIdentifier": "com.facebook.WebDriverAgentRunner.xctrunner"},
+    ]
     assert device.detect_wda_bundle_id(apps) == "com.name.WebDriverAgentRunner"
-    assert device.detect_wda_bundle_id(apps + [{"bundleIdentifier": "com.x.WebDriverAgentRunner.xctrunner"}]) is None
-    assert device.app_info(apps, "com.missing") is None and device.app_info(None, "com.any") == {}
+    assert (
+        device.detect_wda_bundle_id(
+            apps + [{"bundleIdentifier": "com.x.WebDriverAgentRunner.xctrunner"}]
+        )
+        is None
+    )
+    assert (
+        device.app_info(apps, "com.missing") is None
+        and device.app_info(None, "com.any") == {}
+    )
 
     # Feed posts keep a tap target; the tap point stays inside the visible part of the body.
     assert post["_frame"] == {"x": 20, "y": 257, "width": 390, "height": 126}, post
     assert device.tap_point(post["_frame"], 932, 200, 100) == (215, 320)
-    assert device.tap_point({"x": 0, "y": 820, "width": 400, "height": 200}, 932, 200, 100) is None, "body hidden behind bottom bar"
+    assert (
+        device.tap_point({"x": 0, "y": 820, "width": 400, "height": 200}, 932, 200, 100)
+        is None
+    ), "body hidden behind bottom bar"
     assert device.saved(post).keys() == post.keys() - {"_frame"}
-    assert device.parse_posts(device.ET.fromstring(AD_FIXTURE)) == [], "sponsored cards are not posts"
+    assert device.parse_posts(device.ET.fromstring(AD_FIXTURE)) == [], (
+        "sponsored cards are not posts"
+    )
 
     detail = device.ET.fromstring(DETAIL_FIXTURE)
     assert device.back_button(detail) == (42, 81)
     assert device.back_button(tree) is None
     assert device.is_post_detail(detail, "帖子正文在这个 App 里画成图片，读不到文字")
     assert not device.is_post_detail(tree, "帖子正文在这个 App 里画成图片，读不到文字")
-    comments = device.parse_comments(detail, "#话题# 这是一条足够长的帖子正文，用来测试解析是否正确识别")
+    comments = device.parse_comments(
+        detail, "#话题# 这是一条足够长的帖子正文，用来测试解析是否正确识别"
+    )
     assert [c["author"] for c in comments] == ["楼主X", "路人Y", "路人Z"], comments
     first, second, third = comments
-    assert first["body"] == "可以看直播了" and first["labels"] == ["楼主回复了"] and first["likes"] == "1", first
-    assert first["replies"] == ["楼主X：流畅度没问题"] and first["reply_total"] == 1, first
-    assert second["body"].startswith("今天运营商打电话") and second["date"] == "昨天" and second["reply_total"] == 12, second
+    assert (
+        first["body"] == "可以看直播了"
+        and first["labels"] == ["楼主回复了"]
+        and first["likes"] == "1"
+    ), first
+    assert first["replies"] == ["楼主X：流畅度没问题"] and first["reply_total"] == 1, (
+        first
+    )
+    assert (
+        second["body"].startswith("今天运营商打电话")
+        and second["date"] == "昨天"
+        and second["reply_total"] == 12
+    ), second
     assert third["likes"] is None and third["replies"] == [], third
 
     # Drags must not start on a sponsored cell (one opened WeChat during testing).
     assert device.ad_bands(detail) == [(560, 860)], device.ad_bands(detail)
     start = device.drag_start(detail, 932, 372)
-    assert start is not None and not 550 <= start <= 870 and start - 372 >= int(932 * 0.18), start
-    assert device.drag_start(tree, 932, 372) == int(932 * 0.75), "no ads: start low on the screen"
-    full_ad = device.ET.fromstring('<AppiumAUT><XCUIElementTypeCell x="0" y="0" width="430" height="932"><XCUIElementTypeButton label="广告"/></XCUIElementTypeCell></AppiumAUT>')
+    assert (
+        start is not None and not 550 <= start <= 870 and start - 372 >= int(932 * 0.18)
+    ), start
+    assert device.drag_start(tree, 932, 372) == int(932 * 0.75), (
+        "no ads: start low on the screen"
+    )
+    full_ad = device.ET.fromstring(
+        '<AppiumAUT><XCUIElementTypeCell x="0" y="0" width="430" height="932"><XCUIElementTypeButton label="广告"/></XCUIElementTypeCell></AppiumAUT>'
+    )
     assert device.drag_start(full_ad, 932, 372) is None, "ad everywhere: do not drag"
 
 
@@ -294,9 +541,144 @@ def check_screen_compare(base: Path) -> None:
 
     run = base / "shots"
     (run / "evidence").mkdir(parents=True)
-    for name in ("evidence-009-20260101-000000.png", "evidence-010-20260101-000001.png"):
+    for name in (
+        "evidence-009-20260101-000000.png",
+        "evidence-010-20260101-000001.png",
+    ):
         (run / "evidence" / name).write_bytes(tiny_png())
-    assert device.latest_screenshot(run).name.startswith("evidence-010"), "numeric order, not text order"
+    assert device.latest_screenshot(run).name.startswith("evidence-010"), (
+        "numeric order, not text order"
+    )
+
+
+def check_desktop_web_cli() -> None:
+    """Check the new drivers' offline interfaces without opening apps or browsers."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import desktop  # noqa: E402
+    import web  # noqa: E402
+
+    for module, commands in (
+        (
+            desktop,
+            {
+                "start-run",
+                "screenshot",
+                "texts",
+                "tap-text",
+                "scroll",
+                "close",
+                "status",
+            },
+        ),
+        (
+            web,
+            {
+                "start-run",
+                "screenshot",
+                "texts",
+                "tap-text",
+                "scroll",
+                "input",
+                "close",
+                "status",
+            },
+        ),
+    ):
+        help_text = module.parser().format_help()
+        for command in commands:
+            assert command in help_text, (module.__name__, command)
+    assert any(word in "购买" for word in web.RISKY_WORDS)
+    assert any(word in "退出登录" for word in desktop.RISKY_WORDS)
+    assert "document.querySelectorAll" in web.DOM_TEXT_JS
+
+
+def check_desktop_helpers() -> None:
+    """Offline checks for the macOS desktop driver; no app is launched or closed."""
+    import desktop  # noqa: E402
+
+    help_text = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "desktop.py"), "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    for command in (
+        "start-run",
+        "screenshot",
+        "texts",
+        "tap-text",
+        "scroll",
+        "close",
+        "status",
+    ):
+        assert command in help_text, command
+
+    for risky in (
+        "删除文件",
+        "立即支付",
+        "publish post",
+        "send message",
+        "退出登录",
+        "withdraw funds",
+    ):
+        assert desktop._is_risky(risky), risky
+    for safe in ("设置", "首页", "个人中心", "普通导航按钮"):
+        assert not desktop._is_risky(safe), safe
+
+    elements = [
+        {
+            "role": "button",
+            "title": "设置",
+            "value": None,
+            "description": None,
+            "width": 40,
+            "height": 20,
+        },
+        {
+            "role": "button",
+            "title": None,
+            "value": "打开设置面板",
+            "description": None,
+            "width": 80,
+            "height": 30,
+        },
+        {
+            "role": "textField",
+            "title": None,
+            "value": "搜索设置项",
+            "description": "search",
+            "width": 200,
+            "height": 24,
+        },
+    ]
+    exact, contains = desktop.match_elements(elements, "设置")
+    assert len(exact) == 1 and exact[0]["title"] == "设置"
+    assert len(contains) == 2, [desktop._element_texts(item) for item in contains]
+    chosen = exact if exact else contains
+    assert chosen[0]["title"] == "设置"
+    exact_only, _ = desktop.match_elements(elements, "设置", exact=True)
+    assert len(exact_only) == 1
+    none_exact, none_contains = desktop.match_elements(elements, "不存在的文字")
+    assert not none_exact and not none_contains
+
+    helper = desktop.ensure_helper()
+    assert helper.exists() and os.access(helper, os.X_OK), helper
+
+    def helper_json(*args):
+        completed = subprocess.run(
+            [str(helper), *[str(arg) for arg in args]],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return completed.returncode, json.loads(completed.stdout.strip())
+
+    code, payload = helper_json("bogus", 1)
+    assert code == 1 and isinstance(payload, dict) and payload.get("error"), payload
+    code, payload = helper_json("windows", 999999)
+    assert code == 0 and payload == [], payload
+    code, payload = helper_json("press", 999999)
+    assert code == 1 and isinstance(payload, dict) and payload.get("error"), payload
 
 
 def main() -> None:
@@ -306,6 +688,8 @@ def main() -> None:
         check_collect_report(base)
         check_screen_compare(base)
     check_device_helpers()
+    check_desktop_web_cli()
+    check_desktop_helpers()
     print("smoke test passed")
 
 

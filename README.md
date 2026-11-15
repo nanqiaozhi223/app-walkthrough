@@ -1,14 +1,15 @@
 # App Walkthrough
 
-让 AI 编程助手（Codex、OpenCode 等）通过 USB 操作你的 iPhone，一步一步走查 App，最后写成带截图的报告。
+让 AI 编程助手（Codex、OpenCode 等）走查 iPhone App、网页产品和 macOS 桌面产品，逐步记录截图和界面证据，最后写成体验报告。
 
-分工很简单：AI 看截图、判断下一步做什么；本仓库的脚本负责真正动手（截图、读页面文字、点击、滚动、输入），并把每一步记下来，最后生成报告。也可以用来批量采集信息流里的帖子和评论。
+分工很简单：AI 看截图和界面结构、判断下一步做什么；本仓库的脚本负责真正动手（截图、读文字、按语义点击、滚动、输入），并把每一步记下来，最后生成报告。也可以用来批量采集信息流里的帖子和评论。
 
 ## 适用范围
 
 - 只能在 macOS 上用，需要装完整的 Xcode，只有 Command Line Tools 不够。
-- 需要一台真 iPhone，用数据线连着，已在 Xcode 里配对，并打开开发者模式。
-- 要走查的 App 得先装在手机上。
+- iPhone 走查需要真机、USB、Xcode 配对和开发者模式；目标 App 要先装好。
+- 网页走查使用当前 Chrome/Safari 窗口和登录态，需要允许 Apple Events 执行网页 JavaScript；不要在敏感后台页面直接运行。
+- macOS 桌面走查需要给运行命令的 Terminal/iSelf/opencode 开启辅助功能和屏幕录制权限。
 - 不调用任何 AI 接口：截图、文字识别都在本机完成。
 - 默认只做能撤回的操作。付款、下单、发帖、发消息、删除这类动作一律不做，也不会替你输入密码或验证码。
 
@@ -105,6 +106,32 @@ python3 scripts/report.py --run RUN_DIR          # 检查无误后生成 report.
 - 走查记录都在 `runs/` 里。截图可能拍到账号、设备信息甚至通知内容，这个目录已被 `.gitignore` 排除，不会提交；对外分享报告前记得打码。
 
 在 AI 工具里调用 `app-walkthrough` 这个 skill 即可，具体工作方式写在 `SKILL.md` 里。
+
+## 网页和桌面命令速查
+
+网页：
+
+```sh
+python3 scripts/web.py status
+python3 scripts/web.py start-run --browser chrome --url https://example.com --title "网页走查" --task "检查首页体验"
+python3 scripts/web.py screenshot --run RUN_DIR --browser chrome --title "首屏" --reason "开始"
+python3 scripts/web.py texts --run RUN_DIR --browser chrome
+python3 scripts/web.py tap-text --run RUN_DIR --browser chrome "帮助" --reason "打开帮助"
+python3 scripts/web.py scroll --run RUN_DIR --browser chrome down --check --reason "看下方"
+```
+
+桌面：
+
+```sh
+python3 scripts/desktop.py status
+python3 scripts/desktop.py start-run --app-name "Calculator" --title "桌面走查" --task "检查功能入口"
+python3 scripts/desktop.py screenshot --run RUN_DIR --title "初始窗口" --reason "开始"
+python3 scripts/desktop.py texts --run RUN_DIR
+python3 scripts/desktop.py tap-text --run RUN_DIR "清除" --exact --reason "点击清除"
+python3 scripts/desktop.py scroll --run RUN_DIR down --check --reason "看下方"
+```
+
+网页和桌面命令生成的 `manifest.json`、`events.jsonl`、`evidence/` 与手机完全兼容，统一用 `scripts/report.py --run RUN_DIR --init` 和 `scripts/report.py --run RUN_DIR` 输出 Markdown/HTML 报告。
 
 ## 致谢与许可
 
